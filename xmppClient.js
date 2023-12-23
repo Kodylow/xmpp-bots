@@ -1,7 +1,7 @@
 const { client, xml } = require("@xmpp/client");
-const pplxChatComplete = require("./pplxApi");
+const { pplxChatComplete, modelfarmChatComplete } = require("./aiApi");
 
-module.exports = function (username) {
+module.exports = function (api, model) {
   const domain = process.env["DOMAIN"];
   const password = process.env["BOT_PASSWORD"]; // Assuming same password for all clients
 
@@ -9,7 +9,7 @@ module.exports = function (username) {
     service: `wss://${domain}/xmpp-websocket`,
     domain: domain,
     resource: "chat",
-    username: username,
+    username: model,
     password: password,
   });
 
@@ -30,13 +30,21 @@ module.exports = function (username) {
 
       if (body) {
         console.log("Message body:", body);
+        let response;
 
         try {
-          let pplxChatResponse = await pplxChatComplete(body);
+          if (api === "pplx") {
+            response = await pplxChatComplete(body, model);
+          } else if (api === "modelfarm") {
+            response = await modelfarmChatComplete(body);
+          } else {
+            console.error("Invalid API:", api);
+            return;
+          }
           const responseMessage = xml(
             "message",
             { type: "chat", to: from },
-            xml("body", {}, pplxChatResponse),
+            xml("body", {}, response),
           );
 
           await xmpp.send(responseMessage);
@@ -52,7 +60,7 @@ module.exports = function (username) {
     // Makes itself available
     await xmpp.send(xml("presence"));
 
-    console.log(`XMPP bot '${username}' ready at ${domain}...`);
+    console.log(`XMPP bot '${model}' ready at ${domain}...`);
   });
 
   xmpp.start().catch(console.error);

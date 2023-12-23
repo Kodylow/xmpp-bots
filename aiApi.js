@@ -1,5 +1,21 @@
-// Function to send a message to Perplexity AI
-async function pplxChatComplete(messageContent) {
+const replitai = require("@replit/ai-modelfarm");
+
+async function modelfarmChatComplete(messageContent) {
+  try {
+    const result = await replitai.chat({
+      model: "chat-bison", // Model name passed as a parameter
+      temperature: 0.5, // Adjust as needed
+      messages: [{ author: "user", content: messageContent }],
+    });
+    const content = result.value.message.content;
+    return content;
+  } catch (error) {
+    console.error("Error sending message to Model Farm:", error);
+    return null; // Handle the error as appropriate
+  }
+}
+
+async function pplxChatComplete(messageContent, model) {
   try {
     const response = await fetch("https://api.perplexity.ai/chat/completions", {
       method: "POST",
@@ -9,7 +25,7 @@ async function pplxChatComplete(messageContent) {
         Authorization: `Bearer ${process.env.PPLX_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "mistral-7b-instruct",
+        model: model,
         messages: [
           { role: "system", content: "Be precise and concise." },
           { role: "user", content: messageContent },
@@ -27,4 +43,7 @@ async function pplxChatComplete(messageContent) {
   }
 }
 
-module.exports = pplxChatComplete;
+module.exports = {
+  pplxChatComplete,
+  modelfarmChatComplete,
+};

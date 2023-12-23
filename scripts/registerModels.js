@@ -56,6 +56,7 @@ async function registerAllUsers() {
   const domain = process.env["DOMAIN"];
   const pass = process.env["BOT_PASSWORD"];
   const models = [
+    // PPLX
     "pplx-7b-chat",
     "pplx-70b-chat",
     "pplx-7b-online",
@@ -64,6 +65,8 @@ async function registerAllUsers() {
     "codellama-34b-instruct",
     "mistral-7b-instruct",
     "mixtral-8x7b-instruct",
+    // Modelfarm
+    "modelfarm",
   ];
 
   for (const user of models) {

@@ -1,6 +1,6 @@
 const xmppClient = require("./xmppClient");
 
-const models = [
+const pplxModels = [
   "pplx-7b-chat",
   "pplx-70b-chat",
   "pplx-7b-online",
@@ -11,8 +11,13 @@ const models = [
   "mixtral-8x7b-instruct",
 ];
 
+const modelfarmModels = ["modelfarm"];
+
 module.exports = function initializeClients() {
-  models.forEach((model) => {
-    xmppClient(model);
+  pplxModels.forEach((model) => {
+    xmppClient("pplx", model);
+  });
+  modelfarmModels.forEach((model) => {
+    xmppClient("modelfarm", model);
   });
 };
