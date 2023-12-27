@@ -1,0 +1,28 @@
+{
+  "name": "my-project",
+  "module": "index.ts",
+  "scripts": {
+    "build": "mkdir -p .build && bun build --target=node index.ts > .build/index.js",
+    "start": "bun .build/index.js",
+    "dev": "bun run build && bun run start"
+  },
+  "devDependencies": {
+    "bun-types": "^1.0.1"
+  },
+  "type": "module",
+  "dependencies": {
+    "@replit/ai-modelfarm": "^0.0.3",
+    "@xmpp/client": "^0.13.1",
+    "@xmpp/connection": "^0.13.1",
+    "@xmpp/debug": "^0.13.0",
+    "@xmpp/jid": "^0.13.1",
+    "@xmpp/middleware": "^0.13.1",
+    "@xmpp/xml": "^0.13.1",
+    "crypto-js": "^4.2.0",
+    "ltx": "^3.0.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1",
+    "types": "^0.1.1",
+    "uuid": "^9.0.1"
+  }
+}
