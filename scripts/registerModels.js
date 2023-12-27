@@ -65,7 +65,7 @@ async function registerAllUsers() {
     "codellama-34b-instruct",
     "mistral-7b-instruct",
     "mixtral-8x7b-instruct",
-    // Modelfarm
+    // MODELFARM
     "modelfarm",
   ];
 

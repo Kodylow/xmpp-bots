@@ -15,7 +15,7 @@ DOMAIN="xmpp.domain.com"
 
 ## Usage
 ### Run the Registration Script
-This script registers all the PPLX models as users on your XMPP server.
+This script registers all the models as users on your XMPP server.
 
 ```bash
 node registerModels.js
