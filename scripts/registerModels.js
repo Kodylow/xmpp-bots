@@ -2,6 +2,10 @@ require("dotenv").config();
 const { client, xml } = require("@xmpp/client");
 
 // Function to register a new user
+// TODO: This needs to also publish the public key to the chat server
+// Questions for Oscar:
+// - What's the format of the public key? Is it a secp256k1 compressed or X-only?
+// - 
 async function registerUser(domain, user, pass) {
     return new Promise((resolve, reject) => {
         const xmpp = client({

@@ -52,7 +52,7 @@ export async function pplxChatComplete(messageContent: string, model: string): P
         });
 
         const data = await response.json() as PerplexityResponse;
-        console.log("Response from Perplexity AI:", data);
+        // console.log("Response from Perplexity AI:", data);
 
         const content = data.choices[0].message.content;
         return content;
