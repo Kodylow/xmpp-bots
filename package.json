@@ -7,7 +7,14 @@
     "dev": "bun run build && bun run start"
   },
   "devDependencies": {
-    "bun-types": "^1.0.1"
+    "@types/ltx": "^3.0.8",
+    "@types/uuid": "^9.0.7",
+    "@types/xmpp__client": "^0.13.3",
+    "@types/xmpp__xml": "^0.13.4",
+    "bun-types": "^1.0.1",
+    "@typescript-eslint/eslint-plugin": "^6.13.1",
+    "@typescript-eslint/parser": "^6.13.1",
+    "eslint": "^8"
   },
   "type": "module",
   "dependencies": {
