@@ -2,7 +2,7 @@ import { client, xml, IQCaller, JID } from "@xmpp/client";
 import { pplxChatComplete, modelfarmChatComplete } from "./aiApi";
 import xmlUtils, { PublishPublicKeyQuery, SetPubsubNodeConfigQuery, GetPublicKeyQuery, EncryptedDirectChatMessage } from './xmlUtils';
 import type { Element } from 'ltx';
-import { Key, Keypair } from './types';
+import { Key, Keypair, ChatMessage } from './types';
 import encryptionUtils from "./EncryptionUtils";
 import parse from '@xmpp/xml/lib/parse'
 import { v4 as uuidv4 } from 'uuid'
@@ -30,6 +30,7 @@ class XmppChatBot {
         });
 
         // Keypair is generated here so we don't have to store it somewhere
+        // Todo: fix this, should do it from a seed . Actually this was undefined when I first made it, need to update with Oscar
         this.keypair = encryptionUtils.generateDeterministicKeyPair(this.username + this.password);
 
         this.initializeEventHandlers()

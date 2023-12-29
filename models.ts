@@ -23,3 +23,8 @@ export default function initializeClients(): void {
         bot.start();
     });
 };
+
+
+// Idea for better chatbot:
+
+// Should construct from a function that takes the message and returns the response, some meta, and some pricing meta where the ecash mechanism is handled by the bot
