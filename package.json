@@ -20,6 +20,7 @@
     "@xmpp/xml": "^0.13.1",
     "crypto-js": "^4.2.0",
     "ltx": "^3.0.0",
+    "openai": "^4.24.1",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1",
     "types": "^0.1.1",

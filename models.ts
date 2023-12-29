@@ -1,27 +1,23 @@
-import XmppChatBot from "./XmppChatBot";
+import XmppChatBot from "./NewXmppChatBot";
+import { pplxChatComplete, modelfarmChatComplete } from "./aiApi";
 
-const pplxModels = [
-    "pplx-7b-chat",
-    "pplx-70b-chat",
-    "pplx-7b-online",
-    "pplx-70b-online",
-    "llama-2-70b-chat",
-    "codellama-34b-instruct",
-    "mistral-7b-instruct",
-    "mixtral-8x7b-instruct",
-];
-
-const modelfarmModels = ["modelfarm"];
+const models = {
+    "pplx-7b-chat": pplxChatComplete,
+    "pplx-70b-chat": pplxChatComplete,
+    "pplx-7b-online": pplxChatComplete,
+    "pplx-70b-online": pplxChatComplete,
+    "llama-2-70b-chat": pplxChatComplete,
+    "codellama-34b-instruct": pplxChatComplete,
+    "mistral-7b-instruct": pplxChatComplete,
+    "mixtral-8x7b-instruct": pplxChatComplete,
+    "modelfarm": modelfarmChatComplete,
+}
 
 export default function initializeClients(): void {
-    pplxModels.forEach((model) => {
-        let bot = new XmppChatBot("pplx", model);
-        bot.start();
-    });
-    modelfarmModels.forEach((model) => {
-        let bot = new XmppChatBot("modelfarm", model);
-        bot.start();
-    });
+    Object.entries(models).forEach(([key, value]) => {
+        const bot = new XmppChatBot(key, value)
+        bot.start()
+    })
 };
 
 

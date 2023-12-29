@@ -8,16 +8,16 @@ import parse from '@xmpp/xml/lib/parse'
 import { v4 as uuidv4 } from 'uuid'
 
 class XmppChatBot {
-    private api: string;
-    private model: string;
+    private name: string;
     private domain: string;
+    private chatFunction: (message: string, model: string) => Promise<string | null>;
     private password: string;
     private xmpp: ReturnType<typeof client>;
     private keypair: Keypair;
 
-    constructor(api: string, model: string) {
-        this.api = api;
-        this.model = model;
+    constructor(name: string, chatFunction: (message: string, model: string) => Promise<null | string>) {
+        this.name = name
+        this.chatFunction = chatFunction;
         this.domain = process.env["DOMAIN"] ? process.env["DOMAIN"] : "localhost";
         this.password = process.env["BOT_PASSWORD"] ? process.env["BOT_PASSWORD"] : "password";
 
@@ -25,7 +25,7 @@ class XmppChatBot {
             service: `wss://${this.domain}/xmpp-websocket`,
             domain: this.domain,
             resource: "chat",
-            username: this.model,
+            username: this.name,
             password: this.password,
         });
 
@@ -104,21 +104,12 @@ class XmppChatBot {
             const { parsedMessage, action, senderPublicKey } = this.decryptAndParseIncomingMessage(stanza)
             const { sentBy, sentTo } = parsedMessage
 
+            console.log("Parsed message:", parsedMessage)
+
             let message: string | null;
 
             try {
-                if (this.api === "pplx") {
-                    message = await pplxChatComplete(parsedMessage.content, this.model);
-                } else if (this.api === "modelfarm") {
-                    message = await modelfarmChatComplete(parsedMessage.content);
-                } else {
-                    console.error("Invalid API:", this.api);
-                    return;
-                }
-
-                console.debug('parsedMessage', parsedMessage)
-                console.debug('parsedMessage', parsedMessage)
-
+                message = await this.chatFunction(parsedMessage.content, this.name)
 
                 if (message) {
                     this.sendDirectMessage(
@@ -144,7 +135,7 @@ class XmppChatBot {
 
     private async handleOnline(): Promise<void> {
         await this.xmpp.send(xml("presence"));
-        console.log(`XMPP bot '${this.model}' ready at ${this.domain}...`);
+        console.log(`XMPP bot '${this.name}' ready at ${this.domain}...`);
     }
 
     public async start(): Promise<void> {
