@@ -23,6 +23,23 @@ export interface ChatGroup {
     broadcastOnly?: boolean
 }
 
+export interface XmppChatMember extends ChatMember {
+    jid: string
+}
+
+export interface ChatGroupSettings {
+    members: ChatMember[]
+    // What can admins do that members can't (if anything)?
+    // Enable payments? Show message history?
+    // Consider instead a "creator: Member" field here
+    admins: ChatMember[]
+    paymentsEnabled: boolean
+    // Consider instead a shareMessageHistory boolean
+    // because each Member would request and store any Messages
+    // from other Members upon joining a Group
+    showMessageHistory: boolean
+}
+
 export interface ChatPayment {
     amount: MSats
     status: ChatPaymentStatus
