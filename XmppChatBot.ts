@@ -3,12 +3,16 @@ import xmlUtils, {
     SetPubsubNodeConfigQuery,
     GetPublicKeyQuery,
     EncryptedDirectChatMessage,
+    GroupChatMessage,
+    EnterMucRoomPresence,
+    GetRoomConfigQuery
 } from "./xmlUtils";
 import type { Element } from "ltx";
-import { Keypair, ChatMessage } from "./types";
+import { Keypair, ChatMessage, ChatGroup } from "./types";
 import encryptionUtils from "./EncryptionUtils";
 // @ts-expect-error types don't expose this submodule
 import parse from "@xmpp/xml/lib/parse";
+import { XMPP_MESSAGE_TYPES, XMPP_RESOURCE } from "./constants";
 import { v4 as uuidv4 } from "uuid";
 
 class XmppChatBot {
@@ -44,19 +48,106 @@ class XmppChatBot {
         // Keypair is generated here so we don't have to store it somewhere
         // TODO: fix this, should do it from a seed . Actually this was undefined when I first made it, need to update with Oscar
         this.keypair = encryptionUtils.generateDeterministicKeyPair(
-            this.name + this.password,
+            this.username + this.password,
         );
 
         this.initializeEventHandlers();
-
-        this.xmpp.start().then(this.publishPublicKey).catch(console.error);
     }
 
     /**
      * Starts the XMPP client
      */
     async start() {
+        // Start the XMPP service. If there's an error, it will be caught and logged.
         await this.xmpp.start().catch(console.error);
+
+        // Publish the public key. You might want to handle errors here too.
+        await this.publishPublicKey();
+
+        // Enter the group with the provided ID.
+        // await this.enterGroup('3kgjptzidejmllougxatcfji');
+    }
+
+    /**
+     * Fires when the bot is online
+     */
+    private async handleOnline() {
+        await this.xmpp.send(xml("presence"));
+        console.log(`XMPP bot '${this.name}' ready at ${this.domain}...`);
+    }
+
+    /**
+     * Initializes the event handlers for the XMPP client
+     */
+    private initializeEventHandlers(): void {
+        this.xmpp.on("error", (err: Error) => console.error(err));
+        this.xmpp.on("offline", () => console.log("offline"));
+        this.xmpp.on("stanza", async (stanza: any) => this.handleStanza(stanza)); // Replace 'any' with the actual type of stanza
+        this.xmpp.on("online", async (address: any) => this.handleOnline()); // Replace 'any' with the actual type of address
+    }
+
+    /**
+     * Handles incoming stanzas
+     */
+    private async handleStanza(stanza: Element): Promise<void> {
+        if (stanza.is("message")) {
+            switch (stanza.getAttr('type')) {
+                // Handle incoming messages from GroupChat
+                case XMPP_MESSAGE_TYPES.GROUPCHAT: {
+                    return this.handleIncomingGroupMessage(stanza)
+                }
+                // Handle incoming messages from DirectChat while online
+                case XMPP_MESSAGE_TYPES.CHAT: {
+                    return this.handleIncomingDirectMessage(stanza)
+                }
+                // Handle incoming messages after subscribing to user
+                // public key for e2e encryption
+                // case XMPP_MESSAGE_TYPES.HEADLINE: {
+                //     return this.handleSubscriptionEvent(stanza)
+                // }
+            }
+        }
+    }
+
+    // Fedi-encrypted XMPP messages contain a <encrypted> with the message
+    // <encrypted>
+    //   <header>
+    //     <keys>
+    //   </header>
+    //   <payload>
+    //     ...
+    //   </payload>
+    // </encrypted>
+    private async handleIncomingDirectMessage(stanza: Element): Promise<void> {
+        const { parsedMessage, action, senderPublicKey } = this.decryptAndParseIncomingMessage(stanza)
+        const { sentBy, sentTo } = parsedMessage
+
+        console.log("Parsed message:", parsedMessage)
+
+        let message: string | null;
+
+        try {
+            message = await this.chatFunction(parsedMessage.content, this.name)
+
+            if (message) {
+                this.sendDirectMessage(
+                    parsedMessage.sentBy,
+                    senderPublicKey,
+                    this.formatOutgoingMessage({
+                        id: uuidv4(),
+                        sentBy: `${sentTo.jid._local}@${sentTo.jid._domain}`,
+                        sentTo: `${sentBy.jid._local}@${sentBy.jid._domain}`,
+                        sentAt: Date.now() / 1000,
+                        content: message
+                    }),
+                    this.keypair,
+                    false,
+                    false,
+                )
+            }
+        } catch (error) {
+            console.error("Error processing the message:", error);
+        }
     }
 
     /**
@@ -95,6 +186,115 @@ class XmppChatBot {
         } catch (error) {
             console.log("sendDirectMessage", error);
             throw new Error("errors.unknown-error");
+        }
+    }
+
+    private async handleIncomingGroupMessage(stanza: Element) {
+        const bodyText = stanza.getChildText('body')
+        if (!bodyText) return
+
+        const groupMessageJson = stanza.getChildText('gm')
+        const parsedMessage = JSON.parse(groupMessageJson as string)
+        if (!parsedMessage || !parsedMessage.content) return
+
+        // If parsed message starts with /name , then it's a slash command to invoke this bot
+        if (parsedMessage.content.startsWith('/' + this.name)) {
+            console.log(this.name, "invoked with / command in", parsedMessage.sentIn.name, "group...")
+            const command = parsedMessage.content.replace('/' + this.name + " ", '')
+            console.log("Slash Message: ", command)
+            const content = await this.chatFunction(command, this.name)
+            console.log("Chat response: ", content)
+            if (content) {
+                const chatMessage: ChatMessage = {
+                    content,
+                    id: uuidv4(),
+                    sentAt: Date.now() / 1000,
+                    sentBy: this.name,
+                    sentIn: parsedMessage.sentIn.id,
+                }
+                this.sendGroupMessage(
+                    parsedMessage.sentIn,
+                    chatMessage
+                )
+            }
+
+
+            // // Emit a 'message'
+            // this.emit('message', this.formatIncomingMessage(parsedMessage))
+
+            // Emit a 'memberSeen' for the person who sent it in case we hadn't seen them before
+            // MUC `from` is formatted differently than direct chat jids: [roomId]@[domain]/[memberName]
+            // const from = stanza.getAttr('from')
+            // if (from) {
+            //     const fromJid = makeJid(from)
+            //     const memberJid = makeJid(
+            //         fromJid.getResource(),
+            //         fromJid.getDomain().replace('muc.', ''),
+            //         XMPP_RESOURCE,
+            //     )
+            //     this.emit('memberSeen', this.memberFromJid(memberJid.toString()))
+            // }
+        }
+    }
+
+    async sendGroupMessage(group: Partial<ChatGroup>, message: ChatMessage) {
+        return new Promise<void>((resolve, reject) => {
+            try {
+                const { jid } = this.getQueryProperties()
+                const fromJid = jid.toString()
+                const toGroup = `${group.id}@muc.${jid.getDomain()}`
+
+                const groupChatMessageXml = xmlUtils.buildMessage(
+                    new GroupChatMessage({
+                        from: fromJid,
+                        to: toGroup,
+                        message: this.formatOutgoingGroupMessage(
+                            message,
+                            group,
+                        ),
+                    }),
+                )
+
+                const onStanzaReceived = async (stanza: Element) => {
+                    if (
+                        !stanza.is('message') ||
+                        stanza.getAttr('id') !==
+                        groupChatMessageXml.getAttr('id')
+                    )
+                        return
+                    // Check for if the message has an error attached
+                    const error = stanza.getChild('error')
+                    if (error) {
+                        const errorText = error.getChildText('text')
+                        console.log("errorText", errorText)
+                        reject(new Error(errorText || 'errors.unknown-error'))
+                    } else {
+                        resolve()
+                    }
+                    this.xmpp.removeListener('stanza', onStanzaReceived)
+                }
+                this.xmpp.on('stanza', onStanzaReceived)
+
+                console.log("Sending group message...")
+
+                this.xmpp.send(groupChatMessageXml).catch(reject)
+            } catch (error) {
+                console.log('sendGroupMessage', error)
+                reject(new Error('errors.unknown-error'))
+            }
+        })
+    }
+
+    private formatOutgoingGroupMessage(
+        message: ChatMessage,
+        group: Partial<ChatGroup>,
+    ) {
+        return {
+            ...this.formatOutgoingMessage(message),
+            sentIn: {
+                id: group.id,
+                name: group.name,
+            },
         }
     }
 
@@ -145,10 +345,9 @@ class XmppChatBot {
     /**
      * Publishes the bot's public key to the pubsub node
      */
-    async publishPublicKey() {
+    private publishPublicKey = async () => {
         try {
             const { iqCaller, jid } = this.getQueryProperties();
-            // console.log('publishPublicKey: ', result)
             const setPubsubNodeConfigQueryXml = xmlUtils.buildQuery(
                 new SetPubsubNodeConfigQuery({
                     from: jid.toString(),
@@ -156,67 +355,18 @@ class XmppChatBot {
             );
             await iqCaller.request(setPubsubNodeConfigQueryXml);
         } catch (error) {
-            console.log("publishPublicKey", error);
-            throw new Error("errors.unknown-error");
+            throw new Error("Erorr while publishing public key: " + error);
         }
     }
 
     /**
-     * Initializes the event handlers for the XMPP client
+     * Returns the query properties for the XMPP client
      */
-    private initializeEventHandlers(): void {
-        this.xmpp.on("error", (err: Error) => console.error(err));
-        this.xmpp.on("offline", () => console.log("offline"));
-        this.xmpp.on("stanza", async (stanza: any) => this.handleStanza(stanza)); // TODO: Replace 'any' with the actual type of stanza
-        this.xmpp.on("online", async () => this.handleOnline());
-    }
+    private getQueryProperties() {
+        const { iqCaller, jid } = this.xmpp;
+        if (!jid) throw new Error("No JID");
 
-    /**
-     * Handles incoming stanzas
-     */
-    private async handleStanza(stanza: Element): Promise<void> {
-        if (stanza.is("message")) {
-            console.log("Received stanza:", stanza.toString());
-
-            const { parsedMessage, senderPublicKey } =
-                this.decryptAndParseIncomingMessage(stanza);
-            const { sentBy, sentTo } = parsedMessage;
-
-            console.log("Parsed message:", parsedMessage);
-
-            let message: string | null;
-
-            try {
-                message = await this.chatFunction(parsedMessage.content, this.name);
-
-                if (message && senderPublicKey) {
-                    this.sendDirectMessage(
-                        parsedMessage.sentBy,
-                        senderPublicKey,
-                        this.formatOutgoingMessage({
-                            id: uuidv4(),
-                            sentBy: `${sentTo.jid._local}@${sentTo.jid._domain}`,
-                            sentTo: `${sentBy.jid._local}@${sentBy.jid._domain}`,
-                            sentAt: Date.now() / 1000,
-                            content: message,
-                        }),
-                        this.keypair,
-                        false,
-                        false,
-                    );
-                }
-            } catch (error) {
-                console.error("Error processing the message:", error);
-            }
-        }
-    }
-
-    /**
-     * Fires when the bot is online
-     */
-    private async handleOnline() {
-        await this.xmpp.send(xml("presence"));
-        console.log(`XMPP bot '${this.name}' ready at ${this.domain}...`);
+        return { iqCaller, jid };
     }
 
     /**
@@ -227,7 +377,6 @@ class XmppChatBot {
         let action: Element | undefined;
         const encrypted = message.getChild("encrypted");
         let senderPublicKey: string | undefined;
-
         if (encrypted) {
             // First decrypt the payload
             const header = encrypted.getChild("header");
@@ -241,7 +390,6 @@ class XmppChatBot {
             let encryptedPayloadContents = encrypted.getChildText("payload");
 
             const { privateKey } = this.keypair;
-
             const decryptedPayload = encryptionUtils.decryptMessage(
                 encryptedPayloadContents as string,
                 { hex: senderPublicKey },
@@ -297,15 +445,136 @@ class XmppChatBot {
         return outgoing;
     }
 
-    /**
-     * Returns the query properties for the XMPP client
-     */
-    private getQueryProperties() {
-        const { iqCaller, jid } = this.xmpp;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private formatIncomingMessage(rawMessage: any): ChatMessage {
+        const formatIncomingEntity = (
+            sentEntity:
+                | string
+                | { id: string }
+                | { jid: { _local: string; _domain: string } }
+                | undefined,
+        ) => {
+            if (!sentEntity) return undefined
+            if (typeof sentEntity === 'string') return sentEntity
+            if ('id' in sentEntity) return sentEntity.id
+            if ('jid' in sentEntity)
+                return `${sentEntity.jid._local}@${sentEntity.jid._domain}`
+        }
 
-        if (!jid) throw new Error("No JID");
+        const sentBy = formatIncomingEntity(rawMessage.sentBy)
+        if (!sentBy) {
+            throw new Error('Incoming message missing sentBy')
+        }
 
-        return { iqCaller, jid };
+        const payment = rawMessage.payment
+            ? { ...rawMessage.payment }
+            : undefined
+        if (payment?.recipient) {
+            payment.recipient = formatIncomingEntity(payment.recipient)
+        }
+
+        return {
+            id: rawMessage.id,
+            content: rawMessage.content,
+            sentAt: rawMessage.sentAt,
+            sentBy,
+            sentTo: formatIncomingEntity(rawMessage.sentTo),
+            sentIn: formatIncomingEntity(rawMessage.sentIn),
+            payment,
+        }
+    }
+
+    async joinGroup(groupId: string): Promise<ChatGroup> {
+        try {
+            const res = await this.enterGroup(groupId)
+            if (res.find(status => status.getAttr('code') === '110')) {
+                const config = await this.fetchGroupConfig(groupId)
+                if (!config.name) {
+                    throw new Error('Group does not exist')
+                }
+                return { id: groupId, joinedAt: Date.now(), ...config }
+            } else {
+                throw new Error('Failed to join group')
+            }
+        } catch (err) {
+            console.error('joinGroup', err)
+            throw new Error('errors.invalid-group-code')
+        }
+    }
+
+    async enterGroup(groupId: string): Promise<Element[]> {
+        console.log('enterGroup', groupId)
+        return new Promise((resolve, reject) => {
+            try {
+                const { jid } = this.getQueryProperties()
+                const fromUser = jid.toString()
+                const toGroup = `${groupId}@muc.${jid.getDomain()}`
+
+                const enterMucRoomPresence = xmlUtils.buildPresence(
+                    new EnterMucRoomPresence({
+                        from: fromUser,
+                        toGroup,
+                    }),
+                )
+
+                const onStanzaReceived = async (stanza: Element) => {
+                    if (
+                        !stanza.is('presence') ||
+                        stanza.getAttr('id') !==
+                        enterMucRoomPresence.getAttr('id')
+                    )
+                        return
+
+                    // Receive a registration response from the server
+                    const result = stanza.getChild('x')
+                    const statusResults = result?.getChildren('status')
+                    if (!statusResults || !statusResults.length) {
+                        reject(
+                            new Error('No status results from presence stanza'),
+                        )
+                    } else {
+                        resolve(statusResults)
+                    }
+                    this.xmpp.removeListener('stanza', onStanzaReceived)
+                }
+                this.xmpp.on('stanza', onStanzaReceived)
+
+                this.xmpp.send(enterMucRoomPresence).catch(reject)
+            } catch (err) {
+                console.error('enterGroup', err)
+                reject(new Error('errors.unknown-error'))
+            }
+        })
+    }
+
+    async fetchGroupConfig(
+        groupId: string,
+    ): Promise<Pick<ChatGroup, 'name' | 'broadcastOnly'>> {
+        try {
+            const { iqCaller, jid } = this.getQueryProperties()
+            const roomConfigQueryXml = xmlUtils.buildQuery(
+                new GetRoomConfigQuery({
+                    from: jid.toString(),
+                    to: `${groupId}@muc.${jid.getDomain()}`,
+                }),
+            )
+            const result = await iqCaller.request(roomConfigQueryXml)
+            console.log('fetchMucRoomConfig', result)
+
+            const fields = result.getChild('query')?.getChild('x')
+            const features = result.getChild('query')?.getChildren('feature')
+            const name =
+                fields
+                    ?.getChildByAttr('var', 'muc#roomconfig_roomname')
+                    ?.getChildText('value') || ''
+            const moderated = features?.find(
+                f => f.getAttr('var') === 'muc_moderated',
+            )
+            return { name, broadcastOnly: !!moderated }
+        } catch (error) {
+            console.error('fetchMucRoomConfig', error)
+            throw new Error('errors.unknown-error')
+        }
     }
 }
 
